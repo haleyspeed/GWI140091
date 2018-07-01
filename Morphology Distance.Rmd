@@ -1,0 +1,233 @@
+---
+title: "Summary Data and Plots - Morphology By Distance"
+output: html_notebook
+---
+
+```{r}
+
+# print user details
+author <- "Haley E. Speed, Ph.D."
+analysisDate <- date()
+project <- "Gulf War"
+info <- data.frame(Author = author, Date = analysisDate, Project = project)
+print(info)
+```
+
+
+```{r}
+library(nlme)
+library(dplyr)
+library(multcomp)
+library(knitr)
+library(ggplot2)
+```
+
+
+```{r}
+
+file.distanceDir <- readline("Enter the path to the distance directory: ")
+file.summaryDir <- readline("Enter the path to the summary directory: ")
+```
+
+
+<h3> Descriptive Stats </h3>
+
+```{r}
+
+file.path1 <- paste(file.distanceDir, "oil_saline_descriptive.csv", sep = "\\")
+stats.group1 <- read.csv(file.path1, header = TRUE, colClasses = "character")
+stats.group1 <- cbind(stats.group1, group = "oil_saline", groupName = "Oil + Saline")
+colnames(stats.group1) <- (c("distance", "mean", "stdDev", "stdErr", "n", "group", "groupName"))
+print(kable(stats.group1))
+
+file.path2 <- paste(file.distanceDir, "oil_igf_descriptive.csv", sep = "\\")
+stats.group2 <- read.csv(file.path2, header = TRUE, colClasses = "character")
+stats.group2 <- cbind(stats.group2, group = "oil_igf", groupName = "Oil + IGF-1")
+colnames(stats.group2) <- (c("distance", "mean", "stdDev", "stdErr", "n", "group", "groupName"))
+print(kable(stats.group2))
+
+file.path3 <- paste(file.distanceDir, "cpf_saline_descriptive.csv", sep = "\\")
+stats.group3 <- read.csv(file.path3, header = TRUE, colClasses = "character")
+stats.group3 <- cbind(stats.group3, group = "cpf_saline", groupName = "CPF + Saline")
+colnames(stats.group3) <- (c("distance", "mean", "stdDev", "stdErr", "n", "group", "groupName"))
+print(kable(stats.group3))
+
+file.path4 <- paste(file.distanceDir, "cpf_igf_descriptive.csv", sep = "\\")
+stats.group4 <- read.csv(file.path4, header = TRUE, colClasses = "character")
+stats.group4 <- cbind(stats.group4, group = "cpf_igf", groupName = "CPF + IGF-1")
+colnames(stats.group4) <- (c("distance", "mean", "stdDev", "stdErr", "n", "group", "groupName"))
+print(kable(stats.cpf_igf))
+
+```
+
+
+```{r}
+# Assemble datasets for individual plots
+file.path5 <- paste(file.summaryDir, "oil_saline_distance.csv", sep = "\\")
+raw.group1 <- read.csv(file.path5, header = TRUE, colClasses = "character")
+raw.group1 <- cbind(raw.group1, group = "oil_saline", groupName = "Oil + Saline")
+
+file.path6 <- paste(file.summaryDir, "oil_igf_distance.csv", sep = "\\")
+raw.group2 <- read.csv(file.path6, header = TRUE, colClasses = "character")
+raw.group2 <- cbind(raw.group2, group = "oil_igf", groupName = "Oil + IGF-1")
+
+file.path7 <- paste(file.summaryDir, "cpf_saline_distance.csv", sep = "\\")
+raw.group3 <- read.csv(file.path7, header = TRUE, colClasses = "character")
+raw.group3 <- cbind(raw.group3, group = "cpf_saline", groupName = "CPF + Saline")
+
+file.path8 <- paste(file.summaryDir, "cpf_igf_distance.csv", sep = "\\")
+raw.group4 <- read.csv(file.path8, header = TRUE, colClasses = "character")
+raw.group4 <- cbind(raw.group4, group = "cpf_igf", groupName = "CPF + IGF-1")
+
+# Aggregate the raw data for ANOVAs (with and without oil + IGF-1)
+raw.summary4Groups <- rbind(raw.group1, raw.group2, raw.group3, raw.group4)
+raw.summary3Groups <- filter(raw.summary4Groups, groupName != "Oil + IGF-1")
+
+# Write the aggregate data to file for ANOVAs
+file.summary4Groups = paste(raw.group1[1,6], raw.group2[1,6], sep = "_vs_")
+file.summary4Groups = paste(file.summary4Groups, raw.group3[1,6], sep = "_vs_")
+file.summary4Groups = paste(file.summary4Groups, raw.group4[1,6], sep = "_vs_")
+file.summary4Groups = paste(file.summary4Groups, ".csv", sep = "")
+file.summary4Groups = paste(file.distanceDir, file.summary4Groups, sep = "\\")
+write.csv(raw.summary4Groups, file.summary4Groups, row.names = FALSE)
+
+file.summary3Groups = paste(raw.group1[1,6], raw.group3[1,6], sep = "_vs_")
+file.summary3Groups = paste(file.summary3Groups, raw.group4[1,6], sep = "_vs_")
+file.summary3Groups = paste(file.summary3Groups, ".csv", sep = "")
+file.summary3Groups = paste(file.distanceDir, file.summary3Groups, sep = "\\")
+write.csv(raw.summary3Groups, file.summary3Groups, row.names = FALSE)
+
+
+```
+
+
+```{r}
+# Function that performs 2-way repeated measures ANOVA and Tukey posthoc analysis
+getANOVA <- function (file.comparison){
+        
+        data.comparison <- read.csv(file.comparison, header = TRUE)
+        data.comparison <- filter(data.comparison, !is.na(spineDensity))
+        lme_spines = lme(as.numeric(as.character(spineDensity)) ~ as.factor(distance) * as.factor(group), data=data.comparison, random = ~1|cell)
+        file.dir <- dirname(file.comparison)
+        file.base <- strsplit(basename(file.comparison), ".csv")
+        file.anova <- paste(file.base, "_distance_anova.csv", sep = "")
+        file.anova <- paste(file.dir, file.anova, sep = "\\")
+        write.csv(anova(lme_spines), file.anova, row.names = FALSE)
+        print(kable(anova(lme_spines)))
+
+        data.comparison$interact <- interaction(data.comparison$group, as.factor(data.comparison$distance))
+        model = lme(as.numeric(as.character(spineDensity)) ~ interact, data=data.comparison, random = ~1|cell)
+        
+        tukey <- summary(glht(model, linfct=mcp(interact="Tukey")), test = adjusted(type = "bonferroni"))
+        file.tukey <- paste(file.base, "_slope_tukey.txt", sep = "")
+        file.tukey <- paste(file.dir, file.tukey, sep = "\\")
+        capture.output(tukey, file = file.tukey)
+        print(tukey)
+}
+
+# Perform ANOVA and Tukey posthoc analysis on slopes
+getANOVA(file.summary4Groups)
+getANOVA(file.summary3Groups)
+```
+
+```{r}
+getScatterPlot <- function (stats.group1,stats.group2, type){
+       
+        #Set color scheme based on group
+        colors <- c("outline" = "#000000", "oil + saline" = "#666666", 
+                    "oil + igf" = "#56B4E9", "cpf + saline" = "#CC79A7",  "cpf + igf" = "#009E73")
+        
+        name.group1 <- as.character(stats.group1[1,6])
+        name.group2 <- as.character(stats.group2[1,6])
+        
+        
+        if (identical(name.group1, "oil_saline")){
+                name.group1 <- "oil + saline"
+        } else if (identical(name.group1, "oil_igf")){
+                name.group1 <- "oil + igf"
+        } else if (identical(name.group1, "cpf_saline")){
+                name.group1 <- "cpf + saline"
+        } else if (identical(name.group1, "cpf_igf")){
+                name.group1 <- "cpf + igf"
+        }
+        
+        if (identical(name.group2, "oil_saline")){
+                name.group2 <- "oil + saline"
+        } else if (identical(name.group2, "oil_igf")){
+                name.group2 <- "oil + igf"
+        } else if (identical(name.group2, "cpf_saline")){
+                name.group2 <- "cpf + saline"
+        } else if (identical(name.group2, "cpf_igf")){
+                name.group2 <- "cpf + igf"
+        }
+        
+ 
+        # Calculate error bars
+        ymin1 <- as.numeric(as.character(stats.group1$mean)) - 
+                as.numeric(as.character(stats.group1$stdErr))
+        ymax1 <- as.numeric(as.character(stats.group1$mean)) + 
+                as.numeric(as.character(stats.group1$stdErr))
+        ymin2 <- as.numeric(as.character(stats.group2$mean)) - 
+                as.numeric(as.character(stats.group2$stdErr))
+        
+        ymax2 <- as.numeric(as.character(stats.group2$mean)) + 
+                as.numeric(as.character(stats.group2$stdErr))
+       
+        # Build the scatter plot for slope
+        scatter.slope  <- ggplot (stats.group1, aes(x = distance)) +                                
+                geom_point(aes(y = as.numeric(as.character(stats.group1$mean)), 
+                       color = "outline", fill = name.group1), 
+                       shape = 21, size = 5, stroke = 1) +
+                geom_errorbar(aes(ymin = ymin1, ymax = ymax1, 
+                       color = name.group1), width=.25, show.legend=FALSE)  +
+                geom_point(aes(y = as.numeric(as.character(stats.group2$mean)), 
+                       color = "outline", 
+                       fill = name.group2), shape = 21, 
+                       size = 5, stroke = 1) +
+                geom_errorbar(aes(ymin = ymin2, ymax = ymax2, 
+                       color = name.group2), width=.25) +
+                
+                scale_fill_manual(values=colors) +
+                scale_colour_manual(values = colors, guide=FALSE) +
+        
+                expand_limits(y = 0) +
+                xlab (expression("Distance from Soma ("*mu*"A)")) +
+                scale_y_continuous(expression("Total Spines (spines/10 "*mu*"m"*")"), limits = c(5,18)) + 
+            
+                theme(panel.border = element_blank(), 
+                panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(), 
+                axis.line = element_line(colour = "black"),
+                panel.background = element_blank(), 
+                axis.text.y = element_text(size = 14), 
+                axis.text.x = element_text(size = 14, angle = 45, hjust = 1),
+                axis.title = element_text(size = 18), 
+                aspect.ratio=1/1,
+                legend.key = element_rect(fill = NA, color = NA),
+                legend.title=element_blank(),
+                legend.background = element_blank(),
+                legend.position = c(0.15,0.9)) 
+ 
+}
+
+scatter.compare1 <- getScatterPlot(stats.group1,stats.group2)
+scatter.compare2 <- getScatterPlot(stats.group1,stats.group3)
+scatter.compare3 <- getScatterPlot(stats.group1,stats.group4)
+scatter.compare4 <- getScatterPlot(stats.group2,stats.group3)
+scatter.compare5 <- getScatterPlot(stats.group2,stats.group4)
+scatter.compare6 <- getScatterPlot(stats.group3,stats.group4)
+
+
+scatter.compare1
+scatter.compare2
+scatter.compare3
+scatter.compare4
+scatter.compare5
+scatter.compare6
+
+```
+
+
+
+
+

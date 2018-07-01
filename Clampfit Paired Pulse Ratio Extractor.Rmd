@@ -1,0 +1,116 @@
+---
+#title: "Paired Pulse Ratio Extraction"
+author: "Haley E. Speed, PhD"
+output: html_notebook
+---
+
+<h3>"Paired Pulse Ratio Extraction"</h3>
+Turns Clampfit average trace results into clean paired pulse ratios.
+
+<h4>Assumptions </h4>
+- Traces were averaged for each interstimulus interval
+- Slopes of each interstimulus interval were measured for each sweep 
+
+<h4>Variables that may need to be changed:</h4>
+- <b>intervals</b> <- number of interstimulus intervals
+- <b>order</b> <- order of interval presentation
+
+<h4>The default for the Powell Lab Paired Pulse Cycles protocol (Speed et al., 2012, 2013, 2015) are:</h4>
+- <b> intervals </b> <- 6
+- <b> order </b> <- c(50 ms, 500 ms, 100 ms, 80 ms, 30 ms, 200 ms)
+
+
+```{r}
+# Variables to be changed by user
+intervals <- 6 # Number of interstimulus intervals
+
+# Order of interval presentation (rows of spreadsheet)
+order <- c(50,500,100,80,30,200)
+
+```
+
+```{r}
+
+# Do not change this section unless you really know what you are doing
+library(knitr)
+library(openxlsx)
+
+getDir <- function (){
+        file.inDir <- readline("Enter the path to the working directory: ")
+        return (file.inDir)
+}
+getFile <- function(){
+        file.inSlope <- readline("Enter the filename of slope data: ")
+        return (file.inSlope)
+}
+
+getDataTables <- function (file.name, file.dir) {
+        setwd(file.dir)
+        file.data <- read.xlsx(file.name, sheet =  1, colNames=TRUE)
+        return(file.data)
+}
+
+```
+
+```{r}
+
+# Get working directory from the user
+file.dir <- getDir() # if you get "Error: Unexpected Error...." click here and choose "run selected lines" from the "Run" button
+
+```
+
+```{r}
+# Get filename from user (may have to add ".xlsx" if you have file extensions hidden in the file explorer)
+file.name <- getFile() # if you get "Error: Unexpected Error...." click here and choose "run selected lines" from the "Run" button
+
+```
+
+```{r}
+# Read in data from each file 
+slope.data  <- getDataTables(file.name, file.dir)
+print (slope.data)
+```
+
+```{r}
+# Calculations - Do Not Change
+# Warning "NAs introduced by coersion" may be ignored
+output <- data.frame(interval = character(), slope1 = numeric(), slope2 = numeric(), ppr = numeric())
+row <- 1
+while (row <= length(slope.data$slope1)){
+  sorted <- sort(as.numeric(slope.data[row,]))
+  sorted1 <- sorted[1]
+  sorted2 <- sorted[2]
+
+  if (slope.data$slope1[row] == sorted1) { 
+    slope1 <- sorted1
+    slope2 <- sorted2
+  } else if (slope.data$slope1[row] == sorted2) { 
+    slope1 <- sorted2
+    slope2 <- sorted1
+  }
+  ppr <- slope2 / slope1
+  rowData <- cbind( interval = order[row], slope1 = slope1, slope2 = slope2, ppr = ppr)
+  output <- rbind(output, rowData)
+  row <- row + 1
+}
+
+output <- output[order(-output$ppr),]
+output <- cbind(Trace = row.names(output), output) 
+
+print(output)
+
+
+```
+
+```{r}
+file.outDir <- paste(file.dir,"extracted", sep = "\\")
+if (!dir.exists(file.outDir)) { dir.create(file.outDir) }
+file.baseName <- strsplit( file.name, ".xlsx")
+print(file.baseName)
+file.outName <- paste(file.baseName, "analyzed", sep = "_")
+file.outName <- paste(file.outName, "csv", sep = ".")
+file.out <- paste(file.outDir, file.outName, sep = "\\")
+write.csv(output, file.out, row.names = FALSE)
+```
+
+

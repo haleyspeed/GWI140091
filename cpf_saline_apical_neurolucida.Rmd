@@ -1,0 +1,279 @@
+---
+title: "Morphology Neurolucida CPF + Saline"
+output: html_notebook
+---
+
+```{r}
+
+# print user details
+author <- "Haley E. Speed, Ph.D."
+analysisDate <- date()
+project <- "Gulf War"
+info <- data.frame(Author = author, Date = analysisDate, Project = project)
+print(info)
+```
+
+
+```{r}
+library(openxlsx)
+library(dplyr)
+library(knitr)
+```
+
+
+```{r}
+## This directory should be free of all files and folders EXCEPT for xlsx files, otherwise you will get an error
+
+file.dir <- readline("Enter the path to the directory where Neurolucida 360 xlsx files are stored: ")
+file.list <- list.files(file.dir)
+group.names <- as.data.frame(strsplit(file.dir, "[\\]"))
+group.name <- as.character(group.names[12,1])
+
+
+```
+
+```{r}
+
+# Function to calculate spine density by branch order
+getBranching <- function (sheet){
+        
+        spines <- c()
+        thin <- c()
+        stubby <- c()
+        shroom <- c()
+        podia <- c()
+        
+        for (i in sheet$Order){
+                spines[i] <- as.numeric(as.character(sheet[i,17]))/
+                             as.numeric(as.character(sheet[i,3])) * 10
+                thin[i]   <- as.numeric(as.character(sheet[i,19]))/
+                             as.numeric(as.character(sheet[i,3])) * 10
+                stubby[i] <- as.numeric(as.character(sheet[i,20]))/
+                             as.numeric(as.character(sheet[i,3])) * 10
+                shroom[i] <- as.numeric(as.character(sheet[i,21]))/
+                             as.numeric(as.character(sheet[i,3])) * 10
+                podia[i]  <- as.numeric(as.character(sheet[i,22]))/
+                             as.numeric(as.character(sheet[i,3])) * 10
+        }
+        
+        return(as.data.frame(cbind(order = sheet[,1], length = sheet[,3], 
+                     surfaceArea = sheet[,6], volume = sheet[,9],
+                     spines = spines, thin = thin, stubby = stubby, 
+                     mushroom = shroom, filopodia = podia)))
+}
+        
+# Function to caulculate spine density by distance from soma
+getDistance <- function (sheet) {
+        
+        # Number indicates start distance of Sholl ring
+        spines.0   <- 0
+        spines.150 <- 0
+        spines.300 <- 0
+        spines.500 <- 0
+        length.0   <- 0
+        length.150 <- 0
+        length.300 <- 0
+        length.500 <- 0
+        row = 0
+        
+        # Caculate sums of spine number and length for each Sholl ring
+        for (i in sheet[,1]) {
+                
+                i <- as.numeric(as.character(i))
+                row <- (i+10)/10
+                spines <- as.numeric(as.character(sheet[row,4]))
+                length <- as.numeric(as.character(sheet[row,6]))
+                
+                if (i < 150 & is.na(spines) == FALSE) {
+                        spines.0 <- spines.0 + spines
+                        length.0 <- length.0 + length
+                        
+                } else if (i >= 150 & i < 300 & is.na(spines) == FALSE) {
+                        spines.150 <- spines.150 + spines
+                        length.150 <- length.150 + length
+                        
+                } else if (i >= 300 & i < 500 & is.na(spines) == FALSE) {
+                        spines.300 <- spines.300 + spines
+                        length.300 <- length.300 + length
+                } else if (i >= 500 & is.na(spines) == FALSE) {
+                        spines.500 <- spines.500 + spines
+                        length.500 <- length.500 + length
+                }
+        }
+                
+        # Calculate the density of spines for each Sholl ring 
+        # (spines per 10 microns)
+        density.0      <- spines.0 / length.0 * 10
+        density.150    <- spines.150 / length.150 * 10
+        density.300    <- spines.300 / length.300 * 10
+        density.500    <- spines.500 / length.500 * 10
+        distance       <- c("0-149","150-299","300-499","500+")
+        spineNumber    <- c(spines.0, spines.150, spines.300, spines.500)
+        dendriteLength <- c(length.0, length.150, length.300, length.500)
+        spineDensity   <- c(density.0, density.150, density.300, 
+                               density.500)
+
+        return(as.data.frame(cbind(distance = distance, spineNumber, 
+                                   dendriteLength, spineDensity)))
+}
+
+
+# Function to calculate Spine density for the whole dendrite
+# Spine density could have been taken from the Tree Spines-Dendrite sheet, 
+# but to save on memory, it was more efficient to just calculate it here.
+# Note that these are spines/10 microns, not spines/1 micron as in the 
+# Tree Spines-Dendrite Worksheet.
+getTotal <- function (sheet.neuron, sheet.spines, sheet.branching){
+        
+        # Dendrite Length
+        dendrite.length <- as.numeric(as.character(sheet.neuron[3,14]))
+        
+        # Dendrite Surface Area
+        dendrite.surface <- as.numeric(as.character(sheet.neuron[3,18]))
+        
+        # Dendrite Volume
+        dendrite.volume <- as.numeric(as.character(sheet.neuron[3,20]))
+        
+        # Dendrite branches
+        dendrite.branches <-as.numeric(as.character(sheet.branching[,2]))
+        dendrite.branches <- sum(dendrite.branches[!is.na(dendrite.branches)])
+        
+        # Dendrite branch orders
+        dendrite.order <- length(sheet.branching[,1])
+        
+
+        # Spine Area
+        spine.area <- as.numeric(as.character(sheet.spines[,9]))
+        spine.area <- mean(spine.area[!is.na(spine.area)])
+        
+        # Spine Volume
+        spine.volume <- as.numeric(as.character(sheet.spines[,7]))
+        spine.volume <- mean(spine.volume[!is.na(spine.volume)])
+        
+        # Spine Density
+        spines <- as.numeric(as.character(sheet.neuron[3,5])) / dendrite.length * 10
+        thin   <- as.numeric(as.character(sheet.neuron[3,7])) / dendrite.length * 10
+        stubby <- as.numeric(as.character(sheet.neuron[3,8])) / dendrite.length * 10
+        shroom <- as.numeric(as.character(sheet.neuron[3,9])) / dendrite.length * 10
+        podia  <- as.numeric(as.character(sheet.neuron[3,10])) / dendrite.length * 10
+
+        
+        return (as.data.frame(cbind(dendrite.length, dendrite.surface, dendrite.volume, 
+                      dendrite.branches,dendrite.order, spine.area, 
+                      spine.volume, spines, thin, stubby, shroom, podia)))
+}
+
+# Function to write collated data to file
+write.outFile <- function (outFile.data, outFile.fileName, group.name){
+        # Check to see if the summary ouput file currently exists
+        # If so, read it into a dataframe
+        # Check to see if the current cell has already been entered
+        # If so, overwrite the data for that cell
+        # Write to the summary file
+        if (file.exists(outFile.fileName)) {
+                outFile.existing <- read.csv(outFile.fileName, 
+                                             header=TRUE, sep =",")
+                outFile.keep <- filter(outFile.existing, 
+                                       outFile.existing$cell != group.name)
+                outFile.keep <- rbind(outFile.keep,outFile.data)
+                write.csv(outFile.keep, outFile.fileName, row.names = FALSE)
+        } else { write.csv(outFile.data, outFile.fileName, row.names = FALSE) }
+        
+}
+
+
+```
+
+
+
+```{r}
+analyze <- function (file.dir, file.name, group.name){
+        file.name <- paste(file.dir, file.name, sep = "\\")
+        
+        # Open the file and read the relevant sheets:
+        # 3 - Tree Totals-Dendrite, 5 - Neuron Summary,
+        # 12 - Tortuous Distance - Dendrite, 6 - Spine Details
+        sheet.branching <- read.xlsx(file.name, sheet =  3, colNames=TRUE)
+        sheet.neuron    <- read.xlsx(file.name, sheet = 5, colNames=TRUE)
+        sheet.distance  <- read.xlsx(file.name, sheet = 12, colNames = TRUE)
+        sheet.spines    <- read.xlsx(file.name, sheet = 6, colNames = TRUE)
+        
+        # Summary data by branch order, distance from soma, and the entire 
+        # apical dendrite
+        branching       <- getBranching(sheet.branching)   
+        distance        <- getDistance(sheet.distance)         
+        total           <- getTotal(sheet.neuron, sheet.spines, sheet.branching)
+        
+        ## Write data to file
+
+        # Construct the pathname based on the original file name
+        cell.name         <- strsplit(basename(file.name), ".xlsx")
+        file.dir             <- paste(file.dir, "analyzed", sep = "\\")
+        
+        if (!dir.exists(file.dir)) {dir.create(file.dir)}
+        
+        outFile.branching    <- paste(cell.name,"_branching.csv", sep = "")
+        outFile.branching    <- paste(file.dir,outFile.branching, sep = "\\")
+        
+        outFile.distance     <- paste(cell.name,"_distance.csv", sep = "")
+        outFile.distance     <- paste(file.dir,outFile.distance, sep = "\\")
+        outFile.allBranching <- paste(group.name, "_branching.csv", sep = "")
+        outFile.allBranching <- paste(file.dir,outFile.allBranching, sep = "\\")
+        outFile.allDistance  <- paste(group.name, "_distance.csv", sep = "")
+        outFile.allDistance  <- paste(file.dir,outFile.allDistance, sep = "\\")
+        outFile.summary      <- paste(group.name, "_summary.csv", sep = "")
+        outFile.summary      <- paste(file.dir,outFile.summary, sep = "\\")
+        
+        # Assemble data to be written to the group distance table       
+        write.csv(branching,outFile.branching, row.names = FALSE)
+        
+        # Assemble data to be written to the group distance table
+        write.csv(distance,outFile.distance, row.names = FALSE)
+        
+        # Assemble data to be written to the summary table
+        summaryData <- as.data.frame(cbind(cell.name, group.name, total))
+        colnames(summaryData) <- c("cell", "group", "dendriteLength",   
+                                "dendriteSurfaceArea", 
+                                "dendriteVolume", "dendriteBranches", 
+                                "dendriteOrders", "spineArea", "spineVolume", 
+                                "totalSpines", "thinSpines", "stubbySpines", 
+                                "mushroomSpines", "filopodia")
+        write.outFile(summaryData, outFile.summary, group.name)
+
+        # Assemble data to be written to the allBranches table
+        branchData <- cbind(cell.name, group.name, branching)
+        colnames(branchData) <- c("cell", "group", "order", "dendriteLength", 
+                                  "dendriteSurfaceArea", "dendriteVolume", 
+                                  "spines", "thin", "stubby", 
+                                  "mushroom", "filopodia")
+        write.outFile(branchData, outFile.allBranching, group.name)
+
+        # Assemble data to be written to the allDistance table
+        distanceData <- cbind(cell.name, group.name, distance)
+        colnames(distanceData) <- c("cell", "group","distance", "dendriteLength", 
+                                  "spineNumber", "spineDensity")
+        write.outFile(distanceData, outFile.allDistance, group.name)
+
+        print(kable(branchData), caption = "Branching Summary")
+        print(kable(distanceData), caption = "Distance Summary")
+        print(kable(summaryData), caption = "Total Summary")
+
+}
+
+```
+
+
+```{r}
+
+i = 1
+while (i <= length (file.list)){
+        analyzedData <- analyze (file.dir, file.list[i], group.name)
+        i = i + 1      
+}
+
+```
+
+
+
+
+
